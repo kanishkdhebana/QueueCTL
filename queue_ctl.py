@@ -122,3 +122,20 @@ def list_jobs_by_state(state: str) -> List[Job]:
 
     rows = cursor.fetchall()
     return [Job.row_to_job(row) for row in rows]
+
+
+def retry_dead_job(job_id: str) -> bool:
+    conn = get_conn()
+
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE jobs
+            SET state = 'pending', attempts = 0, updated_at = ?, next_run_time = NULL
+            WHERE id = ? AND state = 'dead'
+            """,
+            (datetime.utcnow().isoformat(), job_id),
+        )
+
+    return cursor.rowcount > 0

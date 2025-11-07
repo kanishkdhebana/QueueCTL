@@ -11,6 +11,9 @@ app = typer.Typer(help="queuectl: A CLI-based job queue system.")
 worker_app = typer.Typer()
 app.add_typer(worker_app, name="worker", help="Manage worker processes.")
 
+dlq_app = typer.Typer()
+app.add_typer(dlq_app, name="dlq", help="Manage Dead Letter Queue.")
+
 console = Console()
 
 
@@ -53,7 +56,7 @@ def status():
     try:
         summary = queue_ctl.get_status_summary()
 
-        table = Table(title="Job Queue Status", show_lines=True, expand=True)
+        table = Table(title="Job Queue Status")
         table.add_column("State", style="cyan")
         table.add_column("Count", style="magenta", justify="right")
 
@@ -102,6 +105,29 @@ def worker_start():
     worker_id = f"worker-{os.getpid()}"
     worker = Worker(worker_id)
     worker.run()
+
+
+@dlq_app.command("list")
+def dlq_list():
+    list_jobs(state="dead")
+
+
+@dlq_app.command("retry")
+def dlq_retry(job_id: str = typer.Argument(..., help="The ID of the job to retry.")):
+    try:
+        success = queue_ctl.retry_dead_job(job_id)
+
+        if success:
+            console.print(f"Job {job_id} moved back to 'pending'.")
+
+        else:
+            console.print(f"[bold red]Error: Job {job_id} not found in DLQ.[/bold red]")
+
+    except Exception as e:
+        console.print(f"[bold red]An error occurred: {e}[/bold red]")
+
+    finally:
+        db.close_conn()
 
 
 if __name__ == "__main__":
