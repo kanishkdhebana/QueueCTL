@@ -1,9 +1,13 @@
 import typer
+import os
 import json
 import db
 import queue_ctl
+from worker import Worker
 
 app = typer.Typer(help="queuectl: A CLI-based job queue system.")
+worker_app = typer.Typer()
+app.add_typer(worker_app, name="worker", help="Manage worker processes.")
 
 
 @app.callback()
@@ -38,6 +42,13 @@ def enqueue(
 
     finally:
         db.close_conn()
+
+
+@worker_app.command("start")
+def worker_start():
+    worker_id = f"worker-{os.getpid()}"
+    worker = Worker(worker_id)
+    worker.run()
 
 
 if __name__ == "__main__":

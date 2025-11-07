@@ -34,3 +34,52 @@ def enqueue_job(command: str, max_retries: int | None = None) -> Job:
         )
 
     return job
+
+
+def fetch_job_automatically() -> Job | None:
+    conn = get_conn()
+    now = datetime.utcnow().isoformat()
+
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id FROM jobs
+            WHERE state = 'pending'
+            ORDER BY created_at
+            LIMIT 1
+            """
+        )
+
+        row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        job_id = row["id"]
+
+        cursor.execute(
+            """
+            UPDATE jobs
+            SET state = 'processing', updated_at = ?, attempts = attempts + 1
+            WHERE id = ? AND state = 'pending'
+            RETURNING *
+            """,
+            (now, job_id),
+        )
+
+        locked_job_row = cursor.fetchone()
+        if locked_job_row:
+            return Job.row_to_job(locked_job_row)
+
+    return None
+
+
+def update_job_state(job_id: str, state: str):
+    conn = get_conn()
+    now = datetime.utcnow().isoformat()
+    with conn:
+        conn.execute(
+            "UPDATE jobs SET state = ?, updated_at = ? WHERE id = ?",
+            (state, now, job_id),
+        )
