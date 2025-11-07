@@ -1,6 +1,7 @@
 from datetime import datetime
 from db import get_conn
 from model import Job
+from typing import List, Dict
 
 
 def enqueue_job(command: str, max_retries: int | None = None) -> Job:
@@ -84,3 +85,40 @@ def update_job_state(job_id: str, state: str, next_run_time: str | None = None):
             "UPDATE jobs SET state = ?, updated_at = ?, next_run_time = ? WHERE id = ?",
             (state, now, next_run_time, job_id),
         )
+
+
+def get_status_summary() -> Dict[str, int]:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT state, count(id) as count
+        FROM jobs
+        GROUP By state
+        """
+    )
+
+    rows = cursor.fetchall()
+
+    summary = {
+        "pending": 0,
+        "processing": 0,
+        "completed": 0,
+        "failed": 0,
+        "dead": 0,
+    }
+
+    for row in rows:
+        if row["state"] in summary:
+            summary[row["state"]] = row["count"]
+
+    return summary
+
+
+def list_jobs_by_state(state: str) -> List[Job]:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM jobs WHERE state = ? ORDER BY  created_at", (state,))
+
+    rows = cursor.fetchall()
+    return [Job.from_row(row) for row in rows]
