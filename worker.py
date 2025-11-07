@@ -3,7 +3,7 @@ import time
 from datetime import datetime, timedelta
 import queue_ctl
 import model
-from db import get_conn, close_conn, load_config
+from db import close_conn, load_config
 
 
 class Worker:

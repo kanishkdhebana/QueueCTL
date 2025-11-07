@@ -121,4 +121,4 @@ def list_jobs_by_state(state: str) -> List[Job]:
     cursor.execute("SELECT * FROM jobs WHERE state = ? ORDER BY  created_at", (state,))
 
     rows = cursor.fetchall()
-    return [Job.from_row(row) for row in rows]
+    return [Job.row_to_job(row) for row in rows]
