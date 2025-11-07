@@ -24,7 +24,8 @@ def init_db():
         id TEXT PRIMARY KEY,
         command TEXT NOT NULL,
         state TEXT NOT NULL DEFAULT 'pending',
-        attempts INTEGER NOT NULL DEFAULT 3,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_retries INTEGER NOT NULL DEFAULT 3,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         next_run_time TEXT -- for exponential backoff
@@ -32,7 +33,7 @@ def init_db():
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXIST config(
+        CREATE TABLE IF NOT EXISTS config(
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         )
