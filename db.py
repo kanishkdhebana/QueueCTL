@@ -70,3 +70,12 @@ def load_config() -> dict:
     config["max_retries"] = int(config["max_retries"])
     config["backoff_base"] = int(config["backoff_base"])
     return config
+
+
+def update_config(key: str, value: str):
+    conn = get_conn()
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES(?, ?)", (key, value)
+        )

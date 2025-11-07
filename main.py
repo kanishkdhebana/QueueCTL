@@ -16,6 +16,9 @@ app.add_typer(worker_app, name="worker", help="Manage worker processes.")
 dlq_app = typer.Typer()
 app.add_typer(dlq_app, name="dlq", help="Manage Dead Letter Queue.")
 
+config_app = typer.Typer()
+app.add_typer(config_app, name="config", help="Manage Queue configuration.")
+
 console = Console()
 
 # track running workers
@@ -204,6 +207,47 @@ def dlq_retry(job_id: str = typer.Argument(..., help="The ID of the job to retry
 
     except Exception as e:
         console.print(f"[bold red]An error occurred: {e}[/bold red]")
+
+    finally:
+        db.close_conn()
+
+
+@config_app.command("list")
+def config_list():
+    try:
+        config = db.load_config()
+
+        table = Table(title="Queue Configuration")
+        table.add_column("Key", style="cyan")
+        table.add_column("Value", style="magenta")
+
+        for key, value in config.items():
+            table.add_row(key, str(value))
+
+        console.print(table)
+
+    finally:
+        db.close_conn()
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(..., help="The config key to set (e.g., 'max_retries')."),
+    value: str = typer.Argument(..., help="The new value."),
+):
+    try:
+        if key not in ("max_retries", "backoff_base"):
+            console.print(
+                f"[bold yellow]Warning: '{key}' is not recognized config key.[/bold yellow]"
+            )
+            console.print("Recognized keys are: 'max_retries', 'backoff_base'.")
+
+        db.update_config(key, value)
+        console.print(f"Config set: [bold green]{key} = {value}[/bold green]")
+
+    except Exception as e:
+        console.print(f"[bold red]An error occurred: {e}[/bold red]")
+        raise typer.Exit(code=1)
 
     finally:
         db.close_conn()
