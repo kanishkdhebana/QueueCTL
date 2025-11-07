@@ -3,6 +3,8 @@ import os
 import json
 import db
 import queue_ctl
+import time
+import signal
 from worker import Worker
 from rich.table import Table
 from rich.console import Console
@@ -16,10 +18,14 @@ app.add_typer(dlq_app, name="dlq", help="Manage Dead Letter Queue.")
 
 console = Console()
 
+# track running workers
+PID_DIR = "/tmp/queuectl_pids"
+
 
 @app.callback()
 def main():
     db.init_db()
+    os.makedirs(PID_DIR, exist_ok=True)
 
 
 @app.command()
@@ -101,10 +107,83 @@ def list_jobs(
 
 
 @worker_app.command("start")
-def worker_start():
-    worker_id = f"worker-{os.getpid()}"
-    worker = Worker(worker_id)
-    worker.run()
+def worker_start(
+    count: int = typer.Option(1, "--count", "-c", help="Number of workers to start."),
+):
+    console.print(f"Starting {count} worker(s) in the background...")
+    for i in range(count):
+        pid = os.fork()
+
+        # child process
+        if pid == 0:
+            # detach from parent's session
+            os.setsid()
+
+            dev_null = os.open(os.devnull, os.O_RDWR)
+            os.dup2(dev_null, 0)  # stdin
+            os.dup2(dev_null, 1)  # stdout
+            os.dup2(dev_null, 2)  # stderr
+            os.close(dev_null)
+
+            worker_id = f"worker-{os.getpid()}"
+
+            pid_path = os.path.join(PID_DIR, f"{os.getpid()}.pid")
+            with open(pid_path, "w") as f:
+                f.write(worker_id)
+
+            # close any parent connectin before running worker
+            db.close_conn()
+
+            worker = Worker(worker_id)
+            worker.run()
+
+            os.remove(pid_path)
+            os.exit(0)
+
+        else:
+            console.print(f"  > Started worker with PID [bold cyan]{pid}[/bold cyan]")
+            time.sleep(0.1)
+
+    console.print("All workers started.")
+    db.close_conn()
+
+
+@worker_app.command("stop")
+def worker_stop():
+    console.print("Stopping all running workers...")
+    stopped_count = 0
+
+    for pid_file in os.listdir(PID_DIR):
+        if pid_file.endswith(".pid"):
+            pid_path = os.path.join(PID_DIR, pid_file)
+
+            try:
+                pid = int(pid_file.replace(".pid", ""))
+                os.kill(pid, signal.SIGTERM)
+
+                console.print(
+                    f"  > Sent SIGTERM to worker PID [bold cyan]{pid}[/bold cyan]"
+                )
+                stopped_count += 1
+
+                os.remove(pid_path)
+
+            except ProcessLookupError:
+                console.print(
+                    f"  > Worker PID [bold cyan]{pid}[/bold cyan] not found. Cleaning up."
+                )
+                os.remove(pid_path)
+
+            except Exception as e:
+                console.print(f"[bold red]Error stopping worker {pid}: {e}[/bold red]")
+
+    if stopped_count == 0:
+        console.print("No running workers found.")
+
+    else:
+        console.print(f"Stopped {stopped_count} workers.")
+
+    db.close_conn()
 
 
 @dlq_app.command("list")

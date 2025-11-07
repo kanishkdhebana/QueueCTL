@@ -1,5 +1,6 @@
 import subprocess
 import time
+import signal
 from datetime import datetime, timedelta
 import queue_ctl
 import model
@@ -10,14 +11,27 @@ class Worker:
     def __init__(self, worker_id: str):
         self.worker_id = worker_id
         self.config = load_config()
+        self.shutdown_flag = False
         print(f"Worker {self.worker_id}: Starting...")
         print(
             f"Worker {self.worker_id}: Config loaded (Max Retries: {self.config['max_retries']}, Backoff: {self.config['backoff_base']})"
         )
 
+    def setup_signal_handlers(self):
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+        signal.signal(signal.SIGINT, self._handle_shutdown)
+
+    def _handle_shutdown(self):
+        print(
+            f"Worker {self.worker_id}: Shutdown signal received. Finishing current job..."
+        )
+        self.shutdown_flag = True
+
     def run(self):
+        self.setup_signal_handlers()
+
         try:
-            while True:
+            while not self.shutdown_flag:
                 job = queue_ctl.fetch_job_automatically()
 
                 if job:
@@ -26,13 +40,20 @@ class Worker:
 
                 else:
                     print(f"Worker {self.worker_id}: No jobs found. Sleeping...")
-                    time.sleep(5)
+                    self.sleep_with_shutdown_check(5)
 
         except KeyboardInterrupt:
             print(f"\nWorker {self.worker_id}: Shutting down...")
 
         finally:
             close_conn()
+
+    def sleep_with_shutdown_check(self, duration: int):
+        for _ in range(duration):
+            if self.shutdown_flag:
+                break
+
+            time.sleep(1)
 
     def process_job(self, job: model.Job):
         try:

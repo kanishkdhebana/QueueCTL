@@ -1,18 +1,22 @@
 import sqlite3
+import threading
 
 DB_PATH = "data/queue.db"
-_conn: sqlite3.Connection | None = None
+
+_local = threading.local()
 
 
 def get_conn() -> sqlite3.Connection:
-    global _conn
-    if _conn is None:
-        _conn = sqlite3.connect(DB_PATH)
+    conn = getattr(_local, "conn", None)
+
+    if conn is None:
+        conn = sqlite3.connect(DB_PATH)
 
         # query results are accessible by column name instead of index
-        _conn.row_factory = sqlite3.Row
+        conn.row_factory = sqlite3.Row
+        _local.conn = conn
 
-    return _conn
+    return conn
 
 
 def init_db():
@@ -50,10 +54,11 @@ def init_db():
 
 
 def close_conn():
-    global _conn
-    if _conn is not None:
-        _conn.close()
-        _conn = None
+    conn = getattr(_local, "conn", None)
+
+    if conn is not None:
+        conn.close()
+        _local.conn = None
 
 
 def load_config() -> dict:
