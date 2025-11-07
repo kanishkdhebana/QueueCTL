@@ -54,3 +54,14 @@ def close_conn():
     if _conn is not None:
         _conn.close()
         _conn = None
+
+
+def load_config() -> dict:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM config")
+    config = {row["key"]: row["value"] for row in cursor.fetchall()}
+
+    config["max_retries"] = int(config["max_retries"])
+    config["backoff_base"] = int(config["backoff_base"])
+    return config

@@ -45,10 +45,11 @@ def fetch_job_automatically() -> Job | None:
         cursor.execute(
             """
             SELECT id FROM jobs
-            WHERE state = 'pending'
+            WHERE (state = 'pending' OR (state = 'failed' AND next_run_time <= ?))
             ORDER BY created_at
             LIMIT 1
-            """
+            """,
+            (now,),
         )
 
         row = cursor.fetchone()
@@ -62,10 +63,10 @@ def fetch_job_automatically() -> Job | None:
             """
             UPDATE jobs
             SET state = 'processing', updated_at = ?, attempts = attempts + 1
-            WHERE id = ? AND state = 'pending'
+            WHERE id = ? AND (state = 'pending' OR (state = 'failed' AND next_run_time <= ?))
             RETURNING *
             """,
-            (now, job_id),
+            (now, job_id, now),
         )
 
         locked_job_row = cursor.fetchone()
@@ -75,11 +76,11 @@ def fetch_job_automatically() -> Job | None:
     return None
 
 
-def update_job_state(job_id: str, state: str):
+def update_job_state(job_id: str, state: str, next_run_time: str | None = None):
     conn = get_conn()
     now = datetime.utcnow().isoformat()
     with conn:
         conn.execute(
-            "UPDATE jobs SET state = ?, updated_at = ? WHERE id = ?",
-            (state, now, job_id),
+            "UPDATE jobs SET state = ?, updated_at = ?, next_run_time = ? WHERE id = ?",
+            (state, now, next_run_time, job_id),
         )
