@@ -104,14 +104,14 @@ queuectl config set max_retries 5
 
 ## Architecture Overview
 
-High-level components:
+### High-level components:
 
-- CLI (Typer) - `main.py`: exposes commands to enqueue jobs, inspect state, start/stop workers, and manage DLQ and config. `main.py` also ensures the DB and runtime directories exist.
-- Queue control - `queue_ctl.py`: functions to enqueue jobs, fetch and lock a job for processing, update job state, list jobs, and retry DLQ entries. All DB interactions go through this module.
-- Worker - `worker.py`: background worker process that polls for jobs, runs the job command in a subprocess, logs output, and updates job state (completed/failed/dead). It uses exponential backoff between retries and honors SIGTERM/SIGINT for graceful shutdown.
-- Persistence - `db.py`: an SQLite-backed persistence layer stored at `data/queue.db`. It also stores configuration in a simple key/value `config` table and provides helpers to initialize and load config.
+- **CLI (Typer)** - `main.py`: exposes commands to enqueue jobs, inspect state, start/stop workers, and manage DLQ and config. `main.py` also ensures the DB and runtime directories exist.
+- **Queue control** - `queue_ctl.py`: functions to enqueue jobs, fetch and lock a job for processing, update job state, list jobs, and retry DLQ entries. All DB interactions go through this module.
+- **Worker** - `worker.py`: background worker process that polls for jobs, runs the job command in a subprocess, logs output, and updates job state (completed/failed/dead). It uses exponential backoff between retries and honors SIGTERM/SIGINT for graceful shutdown.
+- **Persistence** - `db.py`: an SQLite-backed persistence layer stored at `data/queue.db`. It also stores configuration in a simple key/value `config` table and provides helpers to initialize and load config.
 
-Job lifecycle:
+### Job lifecycle:
 
 1. Enqueued with state `pending` and stored in the `jobs` table.
 2. A worker calls `fetch_job_atomically` which selects one eligible job (state = `pending`, or `failed` with `next_run_time` <= now), updates it to `processing` and increments `attempts` in the same transaction, then returns the locked job.
@@ -120,7 +120,7 @@ Job lifecycle:
    - On failure or timeout: if attempts >= max_retries -> job state -> `dead` (DLQ). Otherwise job state -> `failed` and `next_run_time` is set using exponential backoff (backoff_base ** attempts).
 4. DLQ entries can be retried via `queuectl dlq retry <id>` which sets them back to `pending` and resets attempts.
 
-Data model (important fields in `jobs` table):
+### Data model (important fields in `jobs` table):
 
 - `id`: UUID string primary key
 - `command`: shell command string to execute
@@ -129,7 +129,17 @@ Data model (important fields in `jobs` table):
 - `max_retries`: per-job maximum retries
 - `created_at`, `updated_at`, `next_run_time` (for backoff)
 
-Worker behavior details:
+### Data Persistence
+
+The system uses a single SQLite database file (data/queue.db) to store all state. This includes:
+
+- The jobs table (stores all jobs and their state).
+
+- The config table (a key-value store for settings).
+
+This ensures that all enqueued jobs are durable and will survive application or system restarts.
+
+### Worker behavior details:
 
 - Workers run in detached child processes when started via `queuectl worker start` (PID files are created under `/tmp/queuectl_pids`).
 - Workers log runtime events to `/tmp/queuectl_logs/workers.log`.
@@ -139,13 +149,48 @@ Worker behavior details:
 
 ## Assumptions & Trade-offs
 
-- Persistence: SQLite is used for simplicity and local development. This is not designed for high-concurrency production loads.
+- **Job Execution:** Jobs are run with subprocess.run(..., shell=True). This is a security trade-off. It provides flexibility (users can run complex shell pipelines) but means that job commands are not sanitized. In a real-world system, this would be a significant security risk (command injection).
 
-- Locking & concurrency: `fetch_job_atomically` relies on selecting a candidate job then using `UPDATE ... RETURNING` to atomically claim it. That pattern depends on SQLite features and is sufficient for light local concurrency, but for heavier loads or distributed workers consider Postgres, Redis, or an external job service.
+- **Concurrency Model:** This project uses a multi-process model (os.fork), which is robust but not cross-platform (it will not work on Windows).
 
-- Background workers: the CLI's fork-and-detach approach is simple and convenient for demos. For production you should use a process manager (systemd, supervisord) or container orchestration.
+- **Worker Failures:** If a worker is forcibly killed (kill -9) or the machine hard-reboots while a job is processing, that job will remain stuck in the processing state. We implemented a handler to re-queue jobs on SIGTERM, but a hard crash will still orphan the job. This would require a separate "reaper" process to find and requeue stale "processing" jobs.
 
-- Security: job commands are executed with `shell=True`. Do not enqueue untrusted commands in production.
+- **Logging:** Worker logs are sent to /tmp/queuectl_logs/workers.log and are not automatically rotated or size-limited.
+
+## Testing Instructions
+
+An automated test script is provided in `tests/run_tests.py` to verify all core functionality.
+
+Prerequisites:
+- Ensure you have installed the project via pip install -e ..
+- The script requires the sqlite3 command-line tool (typically pre-installed on Linux/macOS).
+
+To run the tests:
+```
+python tests/run_tests.py
+```
+
+The script will automatically:
+
+1. Clean up any old state (database, PID files, logs).
+
+2.  Run a series of tests for the 5 key scenarios.
+
+3. Provide clear, color-coded "PASS" or "FAIL" output.
+
+4. Clean up all test artifacts when finished.
+
+ ### Test Scenarios Covered:
+
+- **Test 1: Basic Job Success:** Verifies a job can be enqueued, completed, and its output file created.
+
+- **Test 2: Retry and DLQ:** Verifies a failing job retries and correctly moves to the dead state.
+
+- **Test 3: Concurrency:** Verifies two workers can process jobs in parallel.
+
+- **Test 4: Job Data Survives Restart:** Verifies a pending job is not lost and is processed by a new worker.
+
+- **Test 5: Invalid Commands:** Verifies the CLI gracefully rejects malformed input.
 
 ## Checklist
 
@@ -154,8 +199,8 @@ Worker behavior details:
 - [x] Retry and backoff implemented correctly
 - [x] DLQ operational
 - [x] CLI user-friendly and documented
-- [-] Code is modular and maintainable
-- [ ] Includes test or script verifying main flows
+- [x] Code is modular and maintainable
+- [x] Includes test or script verifying main flows
 
 
 ## Contact / Maintainers
