@@ -5,9 +5,12 @@ import db
 import queue_ctl
 import time
 import signal
-from worker import Worker
+from worker import Worker, log
 from rich.table import Table
 from rich.console import Console
+import traceback
+from threading import Event
+
 
 app = typer.Typer(help="queuectl: A CLI-based job queue system.")
 worker_app = typer.Typer()
@@ -23,12 +26,14 @@ console = Console()
 
 # track running workers
 PID_DIR = "/tmp/queuectl_pids"
+LOG_DIR = "/tmp/queuectl_logs"
 
 
 @app.callback()
 def main():
     db.init_db()
     os.makedirs(PID_DIR, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
 
 @app.command()
@@ -129,8 +134,8 @@ def worker_start(
             os.close(dev_null)
 
             worker_id = f"worker-{os.getpid()}"
-
             pid_path = os.path.join(PID_DIR, f"{os.getpid()}.pid")
+
             with open(pid_path, "w") as f:
                 f.write(worker_id)
 
@@ -141,7 +146,7 @@ def worker_start(
             worker.run()
 
             os.remove(pid_path)
-            os.exit(0)
+            os._exit(0)
 
         else:
             console.print(f"  > Started worker with PID [bold cyan]{pid}[/bold cyan]")

@@ -5,25 +5,50 @@ from datetime import datetime, timedelta
 import queue_ctl
 import model
 from db import close_conn, load_config
+import os
+
+LOG_DIR = "/tmp/queuectl_logs"
+
+
+def log(worker_id: str, message: str):
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+
+        log_path = os.path.join(LOG_DIR, "workers.log")
+        timestamp = datetime.utcnow().isoformat()
+
+        with open(log_path, "a") as f:
+            f.write(f"[{timestamp}] [{worker_id}] {message}\n")
+
+    except Exception as e:
+        pass
 
 
 class Worker:
     def __init__(self, worker_id: str):
         self.worker_id = worker_id
-        self.config = load_config()
+
+        try:
+            self.config = load_config()
+        except Exception as e:
+            log(worker_id, f"CRITICAL: Failed to load config: {e}")
+            self.config = {"max_retries": 3, "backoff_base": 2}
+
         self.shutdown_flag = False
-        print(f"Worker {self.worker_id}: Starting...")
-        print(
-            f"Worker {self.worker_id}: Config loaded (Max Retries: {self.config['max_retries']}, Backoff: {self.config['backoff_base']})"
+        log(self.worker_id, "Starting...")
+        log(
+            self.worker_id,
+            f"Config loaded (Max Retries: {self.config['max_retries']}, Backoff: {self.config['backoff_base']})",
         )
 
     def setup_signal_handlers(self):
         signal.signal(signal.SIGTERM, self._handle_shutdown)
         signal.signal(signal.SIGINT, self._handle_shutdown)
 
-    def _handle_shutdown(self):
-        print(
-            f"Worker {self.worker_id}: Shutdown signal received. Finishing current job..."
+    def _handle_shutdown(self, signum, frame):
+        log(
+            self.worker_id,
+            f"Shutdown signal {signum} received. Finishing current job...",
         )
         self.shutdown_flag = True
 
@@ -32,20 +57,32 @@ class Worker:
 
         try:
             while not self.shutdown_flag:
-                job = queue_ctl.fetch_job_automatically()
+                try:
+                    job = queue_ctl.fetch_job_automatically()
 
-                if job:
-                    print(f"Worker {self.worker_id}: Picked up job {job.id}")
-                    self.process_job(job)
+                    if job:
+                        log(
+                            self.worker_id,
+                            f"Picked up job {job.id} (Attempt {job.attempts})",
+                        )
+                        self.process_job(job)
 
-                else:
-                    print(f"Worker {self.worker_id}: No jobs found. Sleeping...")
-                    self.sleep_with_shutdown_check(5)
+                    else:
+                        log(self.worker_id, "No jobs found. Sleeping...")
+                        self.sleep_with_shutdown_check(5)
+
+                except (InterruptedError, OSError) as e:
+                    log(
+                        self.worker_id,
+                        f"Operation interrupted by signal: {e}. Checking shutdown flag.",
+                    )
+                    continue
 
         except KeyboardInterrupt:
-            print(f"\nWorker {self.worker_id}: Shutting down...")
+            log(self.worker_id, "KeyboardInterrupt received. Shutting down...")
 
         finally:
+            log(self.worker_id, "Run loop exiting. Closing database connection.")
             close_conn()
 
     def sleep_with_shutdown_check(self, duration: int):
@@ -66,20 +103,35 @@ class Worker:
                 timeout=60,
             )
 
-            print(f"\nWorker {self.worker_id}: Job {job.id} completed.")
-            print(f"Output: {result.stdout.strip()}")
+            log(self.worker_id, f"Job {job.id} completed.")
+            log(self.worker_id, f"Output: {result.stdout.strip()}")
             queue_ctl.update_job_state(job.id, "completed", next_run_time=None)
 
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             error_output = e.stderr.strip() if hasattr(e, "stderr") else "Timed out"
-            print(f"\nWorker {self.worker_id}: failed.")
-            print(f"\Error {error_output}")
+            log(self.worker_id, f"Job {job.id} failed.")
+            log(self.worker_id, f"Error: {error_output}")
             self.handle_failure(job)
+
+        except Exception as e:
+            log(
+                self.worker_id,
+                f"Job {job.id} interrupted by unexpected exception: {e}.",
+            )
+
+            if self.shutdown_flag:
+                log(self.worker_id, "Interruption was due to shutdown. Re-queuing.")
+                queue_ctl.requeue_interrupted_job(job.id, job.attempts)
+
+            else:
+                log(self.worker_id, "Interruption was not shutdown. Failing job.")
+                self.handle_failure(job)
 
     def handle_failure(self, job: model.Job):
         if job.attempts >= job.max_retries:
-            print(
-                f"\nWorker {self.worker_id}: Job {job.id} has exceeded maximum retries. Moving to DLQ."
+            log(
+                self.worker_id,
+                f"Job {job.id} has exceeded maximum retries. Moving to DLQ.",
             )
             queue_ctl.update_job_state(job.id, "dead", next_run_time=None)
 
@@ -88,8 +140,9 @@ class Worker:
             delay_seconds = base**job.attempts
 
             retry_time = datetime.utcnow() + timedelta(seconds=delay_seconds)
-            print(
-                f"\nWorker {self.worker_id}: Job {job.id} failed. Retrying in {delay_seconds}s (at {retry_time.isoformat()})."
+            log(
+                self.worker_id,
+                f"Job {job.id} failed. Retrying in {delay_seconds}s (at {retry_time.isoformat()}).",
             )
             queue_ctl.update_job_state(
                 job.id, "failed", next_run_time=retry_time.isoformat()
