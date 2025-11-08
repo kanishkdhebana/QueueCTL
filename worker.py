@@ -58,7 +58,7 @@ class Worker:
         try:
             while not self.shutdown_flag:
                 try:
-                    job = queue_ctl.fetch_job_automatically()
+                    job = queue_ctl.fetch_job_atomically()
 
                     if job:
                         log(

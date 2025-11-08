@@ -114,7 +114,7 @@ High-level components:
 Job lifecycle:
 
 1. Enqueued with state `pending` and stored in the `jobs` table.
-2. A worker calls `fetch_job_automatically()` which selects one eligible job (state = `pending`, or `failed` with `next_run_time` <= now), updates it to `processing` and increments `attempts` in the same transaction, then returns the locked job.
+2. A worker calls `fetch_job_atomically` which selects one eligible job (state = `pending`, or `failed` with `next_run_time` <= now), updates it to `processing` and increments `attempts` in the same transaction, then returns the locked job.
 3. The worker runs the job `command` using `subprocess.run(shell=True)`:
    - On success: job state -> `completed`.
    - On failure or timeout: if attempts >= max_retries -> job state -> `dead` (DLQ). Otherwise job state -> `failed` and `next_run_time` is set using exponential backoff (backoff_base ** attempts).
@@ -141,7 +141,7 @@ Worker behavior details:
 
 - Persistence: SQLite is used for simplicity and local development. This is not designed for high-concurrency production loads.
 
-- Locking & concurrency: `fetch_job_automatically()` relies on selecting a candidate job then using `UPDATE ... RETURNING` to atomically claim it. That pattern depends on SQLite features and is sufficient for light local concurrency, but for heavier loads or distributed workers consider Postgres, Redis, or an external job service.
+- Locking & concurrency: `fetch_job_atomically` relies on selecting a candidate job then using `UPDATE ... RETURNING` to atomically claim it. That pattern depends on SQLite features and is sufficient for light local concurrency, but for heavier loads or distributed workers consider Postgres, Redis, or an external job service.
 
 - Background workers: the CLI's fork-and-detach approach is simple and convenient for demos. For production you should use a process manager (systemd, supervisord) or container orchestration.
 

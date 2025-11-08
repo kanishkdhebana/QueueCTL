@@ -37,7 +37,7 @@ def enqueue_job(command: str, max_retries: int | None = None) -> Job:
     return job
 
 
-def fetch_job_automatically() -> Job | None:
+def fetch_job_atomically() -> Job | None:
     conn = get_conn()
     now = datetime.now(timezone.utc).isoformat()
 
