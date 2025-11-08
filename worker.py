@@ -1,7 +1,7 @@
 import subprocess
 import time
 import signal
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import queue_ctl
 import model
 from db import close_conn, load_config
@@ -15,7 +15,7 @@ def log(worker_id: str, message: str):
         os.makedirs(LOG_DIR, exist_ok=True)
 
         log_path = os.path.join(LOG_DIR, "workers.log")
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         with open(log_path, "a") as f:
             f.write(f"[{timestamp}] [{worker_id}] {message}\n")
@@ -139,7 +139,7 @@ class Worker:
             base = self.config["backoff_base"]
             delay_seconds = base**job.attempts
 
-            retry_time = datetime.utcnow() + timedelta(seconds=delay_seconds)
+            retry_time = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
             log(
                 self.worker_id,
                 f"Job {job.id} failed. Retrying in {delay_seconds}s (at {retry_time.isoformat()}).",

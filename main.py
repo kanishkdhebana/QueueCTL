@@ -48,7 +48,9 @@ def enqueue(
         command = data.get("command")
 
         if not command:
-            console.print("Error: Job JSON must contain a 'command'.")
+            console.print(
+                "[bold red]Error: Job JSON must contain a 'command'.[/bold red]"
+            )
             raise typer.Exit(code=1)
 
         job = queue_ctl.enqueue_job(command=command)
@@ -58,9 +60,9 @@ def enqueue(
         console.print("Error: Invalid JSON string provided.")
         raise typer.Exit(code=1)
 
-    except Exception as e:
-        console.print(f"An error occurred: {e}")
-        raise typer.Exit(code=1)
+    # except Exception as e:
+    #     console.print(f"An error occurred: {e}")
+    #     raise typer.Exit(code=1)
 
     finally:
         db.close_conn()
@@ -102,7 +104,7 @@ def list_jobs(
     try:
         if state not in ("pending", "processing", "completed", "failed", "dead"):
             console.print(f"[bold red]Error: Invalid state '{state}'.[/bold red]")
-            raise type.Exit(code=1)
+            raise typer.Exit(code=1)
 
         jobs = queue_ctl.list_jobs_by_state(state)
 

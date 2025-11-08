@@ -7,9 +7,22 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "queuectl-cli"
 version = "0.1.0"
-dependencies = [
-    "typer[all]",
+description = "A resilient CLI background job queue system built with Python and SQLite."
+authors = [
+    { name = "Kanishk Dhebana"},
 ]
+readme = "README.md"
+license = { text = "MIT" }
+python_requires = ">=3.10"
+
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/kanishkdhebana/queuectl"
+"Bug Tracker" = "https://github.com/your_username/queuectl/issues"
 
 [tool.setuptools]
 py-modules = ["main", "db", "model", "queue_ctl", "worker"]

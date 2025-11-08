@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from db import get_conn
 from model import Job
 from typing import List, Dict
@@ -15,7 +15,7 @@ def enqueue_job(command: str, max_retries: int | None = None) -> Job:
 
     job = Job(command=command, max_retries=max_retries)
 
-    job.updated_at = datetime.utcnow().isoformat()
+    job.updated_at = datetime.now(timezone.utc).isoformat()
 
     with conn:
         conn.execute(
@@ -39,7 +39,7 @@ def enqueue_job(command: str, max_retries: int | None = None) -> Job:
 
 def fetch_job_automatically() -> Job | None:
     conn = get_conn()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     with conn:
         cursor = conn.cursor()
@@ -79,7 +79,7 @@ def fetch_job_automatically() -> Job | None:
 
 def update_job_state(job_id: str, state: str, next_run_time: str | None = None):
     conn = get_conn()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with conn:
         conn.execute(
             "UPDATE jobs SET state = ?, updated_at = ?, next_run_time = ? WHERE id = ?",
@@ -135,7 +135,25 @@ def retry_dead_job(job_id: str) -> bool:
             SET state = 'pending', attempts = 0, updated_at = ?, next_run_time = NULL
             WHERE id = ? AND state = 'dead'
             """,
-            (datetime.utcnow().isoformat(), job_id),
+            (datetime.now(timezone.utc).isoformat(), job_id),
         )
 
     return cursor.rowcount > 0
+
+
+def requeue_interrupted_job(job_id: str, current_attempts: int):
+    conn = get_conn()
+    new_attempts = max(0, current_attempts - 1) 
+    
+    with conn:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET state = 'pending',
+                attempts = ?,
+                updated_at = ?,
+                next_run_time = NULL
+            WHERE id = ? AND state = 'processing'
+            """,
+            (new_attempts, datetime.utcnow().isoformat(), job_id)
+        )
