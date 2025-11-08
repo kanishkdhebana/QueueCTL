@@ -5,11 +5,9 @@ import db
 import queue_ctl
 import time
 import signal
-from worker import Worker, log
+from worker import Worker
 from rich.table import Table
 from rich.console import Console
-import traceback
-from threading import Event
 
 
 app = typer.Typer(help="queuectl: A CLI-based job queue system.")
@@ -42,6 +40,9 @@ def enqueue(
         ..., help='A JSON string defining the job. e.g., \'{"command": "sleep 2"}\''
     ),
 ):
+    """
+    Add a new job to the queue.
+    """
     try:
         data = json.loads(job_json)
         command = data.get("command")
@@ -67,6 +68,9 @@ def enqueue(
 
 @app.command()
 def status():
+    """
+    Show a summary of all job states.
+    """
     try:
         summary = queue_ctl.get_status_summary()
 
@@ -92,6 +96,9 @@ def list_jobs(
         help="Filter jobs by state (pending, processing, completed, failed, dead)",
     ),
 ):
+    """
+    List jobs in the queue, filtered by state.
+    """
     try:
         if state not in ("pending", "processing", "completed", "failed", "dead"):
             console.print(f"[bold red]Error: Invalid state '{state}'.[/bold red]")
@@ -118,6 +125,9 @@ def list_jobs(
 def worker_start(
     count: int = typer.Option(1, "--count", "-c", help="Number of workers to start."),
 ):
+    """
+    Start worker(s).
+    """
     console.print(f"Starting {count} worker(s) in the background...")
     for i in range(count):
         pid = os.fork()
@@ -158,6 +168,9 @@ def worker_start(
 
 @worker_app.command("stop")
 def worker_stop():
+    """
+    Stop all running workers.
+    """
     console.print("Stopping all running workers...")
     stopped_count = 0
 
@@ -196,11 +209,17 @@ def worker_stop():
 
 @dlq_app.command("list")
 def dlq_list():
+    """
+    List all the jobs that are in Dead List Queue.
+    """
     list_jobs(state="dead")
 
 
 @dlq_app.command("retry")
 def dlq_retry(job_id: str = typer.Argument(..., help="The ID of the job to retry.")):
+    """
+    Put a dead job back to the 'pending' state.
+    """
     try:
         success = queue_ctl.retry_dead_job(job_id)
 
@@ -219,6 +238,9 @@ def dlq_retry(job_id: str = typer.Argument(..., help="The ID of the job to retry
 
 @config_app.command("list")
 def config_list():
+    """
+    List the configuration key-value pairs.
+    """
     try:
         config = db.load_config()
 
@@ -240,6 +262,9 @@ def config_set(
     key: str = typer.Argument(..., help="The config key to set (e.g., 'max_retries')."),
     value: str = typer.Argument(..., help="The new value."),
 ):
+    """
+    Update the configuration values for specific key.
+    """
     try:
         if key not in ("max_retries", "backoff_base"):
             console.print(
