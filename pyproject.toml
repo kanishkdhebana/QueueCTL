@@ -1,0 +1,18 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "queuectl-cli"
+version = "0.1.0"
+dependencies = [
+    "typer[all]",
+]
+
+[tool.setuptools]
+py-modules = ["main", "db", "model", "queue_ctl", "worker"]
+
+[project.scripts]
+queuectl = "main:app"
