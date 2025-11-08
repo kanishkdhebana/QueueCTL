@@ -147,6 +147,16 @@ Worker behavior details:
 
 - Security: job commands are executed with `shell=True`. Do not enqueue untrusted commands in production.
 
+## Checklist
+
+- [x] All required commands functional
+- [x] Jobs persist after restart
+- [x] Retry and backoff implemented correctly
+- [x] DLQ operational
+- [x] CLI user-friendly and documented
+- [-] Code is modular and maintainable
+- [ ] Includes test or script verifying main flows
+
 
 ## Contact / Maintainers
 
