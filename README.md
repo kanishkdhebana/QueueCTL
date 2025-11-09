@@ -3,6 +3,11 @@
 
 A small CLI-based job queue system implemented in Python. Jobs are persisted in a local SQLite database and processed by background worker processes.
 
+## Demo
+
+You can watch the demo video here:
+https://drive.google.com/file/d/1NTKaYDeHbdc--oJwpLifgWlJVrdjbjo7/view?usp=drive_link
+
 
 ## Requirements
 
