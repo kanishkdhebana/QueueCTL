@@ -180,6 +180,13 @@ An automated test script is provided in tests/run_tests.py to verify all core fu
 **Prerequisites:**
 - Ensure you have installed the project (either via pipx install . or pip install -e .).
 - The test script uses Python's built-in sqlite3 module.
+- Create and activate a virtual environment and install typer(for looks):
+
+ ```bash
+ python3 -m venv venv
+ source venv/bin/activate
+ pip install typer
+ ```
 
 To run the tests:
 ```
