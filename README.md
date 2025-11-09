@@ -9,47 +9,63 @@ A small CLI-based job queue system implemented in Python. Jobs are persisted in 
 - Python 3.10 or newer
 - SQLite (bundled with Python)
 
-The project depends on `typer` and `rich`. These dependencies are declared in `pyproject.toml` and will be installed when you install the package (for example with `pip install -e .`).
+The project depends on `typer` and `rich`. These dependencies are declared in `pyproject.toml`
 
 
-## Setup Instructions - Run locally
+## Installation
 
-1. Create and activate a virtual environment:
+You can install this tool as a global command (for normal use) or as an editable package (for development).
+
+### For End-Users (Recommended)
+
+This method uses pipx to install the queuectl command globally, making it available everywhere while keeping its dependencies isolated from your system.
+
+1. Clone this repository and navigate into it.
+
+2. Install `pipx` (you only need to do this once):
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+pip3 install pipx
+pipx ensurepath
 ```
 
-2. Ensure the data directory exists (the SQLite file will be created there):
+3. Install `queuectl` from the project directory:
 
 ```bash
-mkdir -p data
+pipx install .
 ```
 
-3. Install the package and its dependencies (editable install registers the `queuectl` console script):
+The queuectl command is now globally available.
+
+
+### For Developers (Editable Install)
+
+This method is for running and developing the code locally.
+
+1. Clone this repository and navigate into it.
+
+2. Create and activate a virtual environment:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+2. Install the package in "editable" mode:
 
 ```bash
 pip install -e .
 ```
 
-After installation the CLI entrypoint `queuectl` will be available (or you can run via `python main.py`).
-
-Note: `main.py` calls `db.init_db()` on startup so the necessary database tables and default config entries will be created automatically when running CLI commands.
-
+The queuectl command is now available as long as this virtual environment is active.
 
 ## Usage Examples - CLI commands and example outputs
-
-Note: the project exposes a Typer-based CLI. You can use the installed `queuectl` command or call `python main.py`.
 
 Enqueue a job (prefer single quotes around the JSON to avoid shell escaping):
 
 ```bash
 # using installed entrypoint
 queuectl enqueue '{"command": "echo hello"}'
-
-# or with python
-python main.py enqueue '{"command": "echo hello"}'
 ```
 
 Example output:
@@ -106,46 +122,41 @@ queuectl config set max_retries 5
 
 ### High-level components:
 
-- **CLI (Typer)** - `main.py`: exposes commands to enqueue jobs, inspect state, start/stop workers, and manage DLQ and config. `main.py` also ensures the DB and runtime directories exist.
-- **Queue control** - `queue_ctl.py`: functions to enqueue jobs, fetch and lock a job for processing, update job state, list jobs, and retry DLQ entries. All DB interactions go through this module.
-- **Worker** - `worker.py`: background worker process that polls for jobs, runs the job command in a subprocess, logs output, and updates job state (completed/failed/dead). It uses exponential backoff between retries and honors SIGTERM/SIGINT for graceful shutdown.
-- **Persistence** - `db.py`: an SQLite-backed persistence layer stored at `data/queue.db`. It also stores configuration in a simple key/value `config` table and provides helpers to initialize and load config.
+- **CLI (Typer)** - `main.py`: Exposes commands to enqueue jobs, inspect state, start/stop workers, and manage DLQ and config.
+
+- **Queue control** - `queue_ctl.py`: Functions to enqueue jobs, fetch and lock a job for processing, update job state, list jobs, and retry DLQ entries. All DB interactions go through this module.
+
+- **Worker** - `worker.py`: A background worker process that polls for jobs, runs the job command in a subprocess, logs output, and updates job state (completed/failed/dead).
+ - **Behaviour**: It uses exponential backoff for retries and honors SIGTERM/SIGINT for graceful shutdown (finishing its current job before exiting). Workers run in detached child processes (via os.fork) and log all activity to /tmp/queuectl_logs/workers.log.
+
+- **Persistence** - An SQLite-backed persistence layer stored at ~/.queuectl/queue.db.
+ - **Behaviour**: The application automatically creates the ~/.queuectl directory. It ensures all jobs are durable and stores runtime settings in a key/value config table.
 
 ### Job lifecycle:
 
 1. Enqueued with state `pending` and stored in the `jobs` table.
+
 2. A worker calls `fetch_job_atomically` which selects one eligible job (state = `pending`, or `failed` with `next_run_time` <= now), updates it to `processing` and increments `attempts` in the same transaction, then returns the locked job.
+
 3. The worker runs the job `command` using `subprocess.run(shell=True)`:
    - On success: job state -> `completed`.
    - On failure or timeout: if attempts >= max_retries -> job state -> `dead` (DLQ). Otherwise job state -> `failed` and `next_run_time` is set using exponential backoff (backoff_base ** attempts).
+
 4. DLQ entries can be retried via `queuectl dlq retry <id>` which sets them back to `pending` and resets attempts.
 
 ### Data model (important fields in `jobs` table):
 
 - `id`: UUID string primary key
+
 - `command`: shell command string to execute
+
 - `state`: one of `pending`, `processing`, `completed`, `failed`, `dead`
+
 - `attempts`: number of attempts made
+
 - `max_retries`: per-job maximum retries
+
 - `created_at`, `updated_at`, `next_run_time` (for backoff)
-
-### Data Persistence
-
-The system uses a single SQLite database file (data/queue.db) to store all state. This includes:
-
-- The jobs table (stores all jobs and their state).
-
-- The config table (a key-value store for settings).
-
-This ensures that all enqueued jobs are durable and will survive application or system restarts.
-
-### Worker behavior details:
-
-- Workers run in detached child processes when started via `queuectl worker start` (PID files are created under `/tmp/queuectl_pids`).
-- Workers log runtime events to `/tmp/queuectl_logs/workers.log`.
-- Graceful shutdown: workers handle SIGTERM/SIGINT, set a shutdown flag, and attempt to finish the current job before exiting.
-
-
 
 ## Assumptions & Trade-offs
 
@@ -155,15 +166,15 @@ This ensures that all enqueued jobs are durable and will survive application or 
 
 - **Worker Failures:** If a worker is forcibly killed (kill -9) or the machine hard-reboots while a job is processing, that job will remain stuck in the processing state. We implemented a handler to re-queue jobs on SIGTERM, but a hard crash will still orphan the job. This would require a separate "reaper" process to find and requeue stale "processing" jobs.
 
-- **Logging:** Worker logs are sent to /tmp/queuectl_logs/workers.log and are not automatically rotated or size-limited.
+- **Storage Location:** All data, logs, and PIDs are stored in user-space (~/.queuectl, /tmp/queuectl_logs, /tmp/queuectl_pids). This is portable but not a production-standard location like /var/log or /var/run.
 
 ## Testing Instructions
 
-An automated test script is provided in `tests/run_tests.py` to verify all core functionality.
+An automated test script is provided in tests/run_tests.py to verify all core functionality. This script uses typer and rich to provide a clean, readable output.
 
-Prerequisites:
-- Ensure you have installed the project via pip install -e ..
-- The script requires the sqlite3 command-line tool (typically pre-installed on Linux/macOS).
+**Prerequisites:**
+- Ensure you have installed the project (either via pipx install . or pip install -e .).
+- The test script uses Python's built-in sqlite3 module.
 
 To run the tests:
 ```
@@ -191,6 +202,34 @@ The script will automatically:
 - **Test 4: Job Data Survives Restart:** Verifies a pending job is not lost and is processed by a new worker.
 
 - **Test 5: Invalid Commands:** Verifies the CLI gracefully rejects malformed input.
+
+
+## Uninstallation
+
+**If installed with pipx (End-User)**
+
+pipx makes uninstallation simple, but does not remove the app's data.
+
+```
+# 1. Uninstall the application
+pipx uninstall queuectl-cli
+
+# 2. (Optional) Remove application data and logs
+rm -rf ~/.queuectl
+rm -rf /tmp/queuectl_logs
+rm -rf /tmp/queuectl_pids
+
+```
+
+***If installed with pip (Developer)***
+
+1. Make sure your virtual environment is active (source venv/bin/activate).
+
+2. Uninstall the package:
+
+```
+pip uninstall queuectl-cli
+```
 
 ## Checklist
 

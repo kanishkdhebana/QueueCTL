@@ -12,13 +12,15 @@ import sys
 app = typer.Typer()
 console = Console()
 
+APP_DIR = os.path.join(os.path.expanduser("~"), ".queuectl")
+DB_FILE = os.path.join(APP_DIR, "queue.db")
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DB_FILE = os.path.join(PROJECT_ROOT, "data/queue.db")
+TEST_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "tests/test_output")
+
 LOG_DIR = "/tmp/queuectl_logs"
 LOG_FILE = os.path.join(LOG_DIR, "workers.log")
 PID_DIR = "/tmp/queuectl_pids"
-
-TEST_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "tests/test_output")
 
 
 def info(message):
@@ -87,8 +89,8 @@ def cleanup():
     info("Cleaning up test artifacts...")
     run_cli(["worker", "stop"], check=False)  # Ignore errors if no workers
 
-    if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)
+    if os.path.exists(APP_DIR):
+        shutil.rmtree(APP_DIR) # Removes ~/.queuectl
     if os.path.exists(PID_DIR):
         shutil.rmtree(PID_DIR)
     if os.path.exists(LOG_DIR):
@@ -96,6 +98,7 @@ def cleanup():
     if os.path.exists(TEST_OUTPUT_DIR):
         shutil.rmtree(TEST_OUTPUT_DIR)
 
+    os.makedirs(APP_DIR, exist_ok=True) 
     os.makedirs(PID_DIR, exist_ok=True)
     os.makedirs(LOG_DIR, exist_ok=True)
     os.makedirs(TEST_OUTPUT_DIR, exist_ok=True)
