@@ -3,8 +3,8 @@ import threading
 import os
 
 
-_CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(_CURRENT_FILE_DIR, "data", "queue.db")
+APP_DIR = os.path.join(os.path.expanduser("~"), ".queuectl")
+DB_PATH = os.path.join(APP_DIR, "queue.db")
 
 _local = threading.local()
 

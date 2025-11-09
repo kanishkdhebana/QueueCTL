@@ -29,9 +29,10 @@ LOG_DIR = "/tmp/queuectl_logs"
 
 @app.callback()
 def main():
-    db.init_db()
+    os.makedirs(db.APP_DIR, exist_ok=True)
     os.makedirs(PID_DIR, exist_ok=True)
     os.makedirs(LOG_DIR, exist_ok=True)
+    db.init_db()
 
 
 @app.command()
