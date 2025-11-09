@@ -1,7 +1,10 @@
 import sqlite3
 import threading
+import os
 
-DB_PATH = "data/queue.db"
+
+_CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(_CURRENT_FILE_DIR, "data", "queue.db")
 
 _local = threading.local()
 
@@ -61,14 +64,20 @@ def close_conn():
         _local.conn = None
 
 
-def load_config() -> dict:
+def load_config() -> dict[str, str | int]:
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT key, value FROM config")
-    config = {row["key"]: row["value"] for row in cursor.fetchall()}
+    config_raw = {row["key"]: row["value"] for row in cursor.fetchall()}
 
-    config["max_retries"] = int(config["max_retries"])
-    config["backoff_base"] = int(config["backoff_base"])
+    config: dict[str, str | int] = dict(config_raw)
+
+    if "max_retries" in config:
+        config["max_retries"] = int(config["max_retries"])
+
+    if "backoff_base" in config:
+        config["backoff_base"] = int(config["backoff_base"])
+
     return config
 
 
